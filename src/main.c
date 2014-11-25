@@ -37,7 +37,12 @@ void print_processes(char *dumpfile);
 int main()
 {
         DPRINTF("project kick-off!\n");
+	printf("==================Get Process Offset from the Trusted OS=======================\n");
         get_offsets("dump.123");  // Get the offset of pid, process name, and next pointer
+	printf("===============================================================================\n");
+	printf("                                                                               \n");
+	printf("===============================================================================\n");
+	printf("==================Print Processes of the Monitoring OS=========================\n");
         print_processes("dump.123"); // Print the process list of the monitoring Guest OS
 	return 0;
 }
@@ -160,22 +165,27 @@ void print_processes(char *dumpfile2)
 
 	printf("PID PROCESS_NAME\n");
 	fseek(ptr_dumpfile,init_task,SEEK_SET);
+//	printf("%lx\n",init_task+offset_of_next);
 	while(1)
 	{
 		unsigned long ptr_mark=ftell(ptr_dumpfile);
 		fseek(ptr_dumpfile,ptr_mark+offset_of_pid,SEEK_SET);
                	fread(ptr_pid,4,1,ptr_dumpfile);
+		*ptr_pid=*ptr_pid&0xffffffff;
 		printf("%ld ",*ptr_pid);
 		fseek(ptr_dumpfile,ptr_mark+offset_of_name,SEEK_SET);
 		fread(ptr,4096,1,ptr_dumpfile);
 		printf("%s\n",ptr);
 		fseek(ptr_dumpfile,ptr_mark+offset_of_next,SEEK_SET);
                 fread(ptr_next,4,1,ptr_dumpfile);
+		*ptr_next=*ptr_next&0xffffffff;
+//		printf(" %lx\n",(*ptr_next));
+		if( *ptr_next == (init_task+offset_of_next+0xc0000000) )
+			break;
 		fseek(ptr_dumpfile,*ptr_next-0xc0000000-offset_of_next,SEEK_SET);
 		print_counter++;
-		if(print_counter>20)
-			break;
 	}
+		printf("Total number of processes: %ld\n", print_counter);
 	fclose(ptr_dumpfile);
 }
 
