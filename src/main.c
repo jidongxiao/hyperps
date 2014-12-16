@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <getopt.h>
 #include "hyperps/debug.h"
 
 #define BUFFER_SIZE 4096
@@ -30,7 +31,13 @@
 #define DEBUG 0
 #endif
 
+const char *trusted_dump = NULL;
+const char *monitored_dump = NULL;
 unsigned long init_task=0x16753a0;
+
+const char *proc_name0=NULL;
+const char *proc_name1=NULL;
+const char *proc_name2=NULL;
 
 // Windows
 //char *proc_name0="Idle";
@@ -53,9 +60,9 @@ unsigned long init_task=0x16753a0;
 //char *proc_name1="audit";
 //char *proc_name2="init";
 //char *proc_name3="idle";
-char *proc_name0="g_event";
-char *proc_name1="g_up";
-char *proc_name2="g_down";
+//char *proc_name0="g_event";
+//char *proc_name1="g_up";
+//char *proc_name2="g_down";
 
 long offset_of_name0 = -1;
 long offset_of_name0_align4 = -1;
@@ -80,24 +87,139 @@ long get_offsets_in_vdump(FILE* fd);
 long get_offsets_in_vdump_second_pass(FILE* fd);
 void print_process_from_vdump(FILE *fd);
 
+unsigned int bits = 32; // We support both 32bits and 64bits.
+
 unsigned int is_phys_dump = 0;	// FIXME: Currently we assume we are using virtual memory dump, rather then physical memory dump, but we should support physical memory dump in the future.
-
-unsigned int next_to_next = 0;	// We consider the linked list could be construted in two ways, either "next" points to "next", or "next" points to the start of the next structure.
+unsigned int next_to_next = 1;	// We consider the linked list could be construted in two ways, either "next" points to "next", or "next" points to the start of the next structure.
 unsigned int second_pass = 0;	// Only for some rare cases, we need a second pass, for example, for FreeBSD 8.4 32bits.
-
-unsigned int task_4k_align=0;
-
+unsigned int task_4k_align=0;   // So far, we only know that Linux kernel 2.4 has such property, i.e., the task_struct is 4k-aligned.
 unsigned int print_counter = 0;	// Counts how many processes are there in the system.
+
+static void help(void)
+{
+    const char *help_msg =
+           "HyperLink version 1.0, Copyright (c) 2014 Jidong Xiao & Lei Lu\n"
+           "usage: hyperlink [options] -o OS trusted_dumpfile_path monitored_dumpfile_path\n"
+           "HyperLink memory forensic utility\n"
+           "\n"
+           "Command options and parameters:\n"
+           "  '-d' indicates that the dump file is a virtual memory dump or a physical memory dump,\n"
+           "    the parameter can be either 'virt' or 'phys'\n"
+           "  '-h' shows this help message\n"
+           "  '-l' indicates that the linked list in the operating system is the old type of the new type,\n"
+           "    the parameter can be either 'old' or 'new'\n"
+           "  '-o' indicates the operating system of the dump file\n"
+           "  'trusted_dumpfile_path' is the path to the trusted dump file\n"
+           "  'monitored_dumpfile_path' is the path to the monitored dump file\n"
+           "\n";
+
+    printf("%s\n", help_msg);
+    exit(1);
+}
+
+void parse_options(int argc, char **argv)
+{
+    int c;
+    
+    for(;;) {
+        c = getopt(argc, argv, "d:t:m:l:o:h");
+        if (c == -1) {
+            break;
+        }
+        switch(c) {
+        case '?':
+        case 'h':
+            help();
+            break;
+        case 'd':    // dump type: virtual memory dump or physical memory dump.
+            printf("The dump type is %s\n", optarg);
+            if(strcmp(optarg,"phys")==0){
+                is_phys_dump=1;
+                printf("Okay, so we are dealing with physical memory dump.\n");
+            }else if(strcmp(optarg,"virt")==0){
+                is_phys_dump=0;
+                printf("Okay, so we are dealing with virtual memory dump.\n");
+            }else{
+                printf("The dump file has to be either virtual memory dump, or physical memory dump.\n");
+                exit(1);
+            }
+            break;
+        case 't':
+            trusted_dump = optarg;
+            break;
+        case 'm':
+            monitored_dump = optarg;
+            break;
+        case 'l':    // link type, next points the next or next points to the start of the next structure.
+            printf("The link type is %s\n", optarg);
+            if(strcmp(optarg,"old")==0){
+                next_to_next=0;
+                printf("Okay, so we are dealing with old type of linked list.\n");
+            }else if(strcmp(optarg,"new")==0){
+                next_to_next=1;
+                printf("Okay, so we are dealing with new type of linked list.\n");
+            }else{
+                printf("The linked list has to be either old, i.e., next to start, or new, i.e., next to next.\n");
+                exit(1);
+            }
+            break;
+        case 'o':
+            if(strcmp(optarg,"linux") == 0){
+                proc_name0="swapper";
+                proc_name1="init";
+                printf("Okay, so we are dealing with Linux operating system dump.\n");
+            }else if(strcmp(optarg,"linux24") == 0){
+                proc_name0="swapper";
+                proc_name1="init";
+                task_4k_align=1;
+                next_to_next=0;
+                printf("Okay, so we are dealing with Linux 2.4 operating system dump.\n");
+            }else if(strcmp(optarg,"win") == 0){
+                proc_name0="Idle";
+                proc_name1="System";
+                printf("Okay, so we are dealing with Windows operating system dump.\n");
+            }else if(strcmp(optarg,"win2000") == 0){
+                proc_name0="System";
+                proc_name1="smss";
+                proc_name2="csrss";
+                printf("Okay, so we are dealing with Windows operating system dump, older than win 2000.\n");
+            }else if(strcmp(optarg,"freebsd") == 0 ){
+//                proc_name0="kernel";
+//                proc_name0="audit";    // Note, this is an optimization, the first process is kernel, but there are too many "kernel" in the memory, which makes the program super slow.
+//                proc_name0="init";
+//                proc_name0="idle";
+                proc_name0="g_event";
+                proc_name1="g_up";
+                proc_name2="g_down";
+                next_to_next=0;
+                second_pass=1;
+                printf("Okay, so we are dealing with FreeBSD operating system dump.\n");
+            }else{
+                printf("Sorry, The operating system dump you typed is not supported.\n");
+                exit(1);
+            }
+            break;
+        }
+    }
+
+    trusted_dump = argv[optind];
+    optind++;
+    monitored_dump = argv[optind];
+}
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3) {
-        printf("Usage: %s trusted_image monitored_image\n", argv[0]);
-    } else {
+        parse_options(argc, argv);
         DPRINTF("project kick-off!\n");
-        FILE* trusted_dumpfile = fopen(argv[1], "rb");
+        if( (trusted_dump == NULL) || (monitored_dump == NULL) ){
+            printf("Either trusted dump file or monitored dump file not specified.\n");
+            printf("\n");
+            help();
+            return -1;
+        }
+        FILE* trusted_dumpfile = fopen(trusted_dump, "rb");
         if (!trusted_dumpfile) {
-            printf("Unable to open dump file: %s\n", argv[1]);
+            printf("Unable to open dump file: %s\n", trusted_dump);
             return -1;
         }
         if(is_phys_dump==0) {	// We are dealing with virtual memory dump.
@@ -108,9 +230,9 @@ int main(int argc, char *argv[])
             }
             fclose(trusted_dumpfile);
             printf("==================Print Processes of the Monitoring OS=========================\n");
-            FILE* monitored_dumpfile = fopen(argv[2], "rb");
+            FILE* monitored_dumpfile = fopen(monitored_dump, "rb");
             if (!monitored_dumpfile) {
-                printf("Unable to open dump file: %s\n", argv[2]);
+                printf("Unable to open dump file: %s\n", monitored_dump);
                 return -1;
             }
 	    print_process_from_vdump(trusted_dumpfile);
@@ -120,15 +242,14 @@ int main(int argc, char *argv[])
             get_offsets_in_pdump(trusted_dumpfile);  // Get the offset of pid, process name, and next pointer
             fclose(trusted_dumpfile);
             printf("==================Print Processes of the Monitoring OS=========================\n");
-            FILE* monitored_dumpfile = fopen(argv[2], "rb");
+            FILE* monitored_dumpfile = fopen(monitored_dump, "rb");
             if (!monitored_dumpfile) {
-                printf("Unable to open dump file: %s\n", argv[2]);
+                printf("Unable to open dump file: %s\n", monitored_dump);
                 return -1;
             }
             print_processes_from_pdump(monitored_dumpfile); // Print the process list of the monitoring Guest OS
             fclose(monitored_dumpfile);
         }
-    }
     return 0;
 }
 
@@ -275,7 +396,6 @@ long get_offsets_in_vdump(FILE* fd)
     char ptr_next[4];
     long found_next = 0;
 
-
     if(next_to_next == 1)	// When "next" points to the "next" pointer, rather than the start of the next structure, this is true for Linux Kernel 2.6 as well as for Windows 7.
     {
         fseek(fd, 0, SEEK_SET);
@@ -325,7 +445,7 @@ long get_offsets_in_vdump(FILE* fd)
             }
             read_counter0++;
         }
-    }else if(task_4k_align == 1)	// When "next" points to the start of the next structure, this is true for Linux Kernel 2.4 and FreeBSD 8.4.
+    }else if(task_4k_align == 1)	// When "next" points to the start of the next structure, and the task_struct is 4k-aligned, this is true for Linux Kernel 2.4.
     {
         fseek(fd, 0, SEEK_SET);
 
@@ -395,14 +515,14 @@ long get_offsets_in_vdump(FILE* fd)
         second_pass = 1;
         printf("===We need a second pass to get the offsets.===\n");
         if(get_offsets_in_vdump_second_pass(fd) == -1){
-            return -1;	// we could not find the offsets the construct the linked list
+            return -1;	// we could not find the offsets to construct the linked list
         }else
             return 0;
     }
     return -1;
 }
 
-long get_offsets_in_vdump_second_pass(FILE* fd)
+long get_offsets_in_vdump_second_pass(FILE* fd)    // When "next" points to the start of the next structure, but the task_struct is _not_ 4k-aligned, this is true for FreeBSD 8.4.
 {
     long read_counter0 = 0;
     long read_counter1 = 0;
@@ -514,10 +634,12 @@ void print_process_from_vdump(FILE *fd)
     fseek(fd, offset_of_name0, SEEK_SET);	// process 0, name pointer
     fread(ptr_name, BUFFER_SIZE, 1, fd);	// this should be the process name
     printf("Name of the process is %s\n",ptr_name);	// print process 0 name
+    print_counter++;
 
     fseek(fd, offset_of_name1, SEEK_SET);	// process 0, name pointer
     fread(ptr_name, BUFFER_SIZE, 1, fd);	// this should be the process name
     printf("Name of the process is %s\n",ptr_name);	// print process 1 name
+    print_counter++;
 
 //    printf("proc_offset_of_next is 0x%lx\n", proc_offset_of_next);
 //    printf("offset_of_name0_least4 is 0x%lx\n", offset_of_name0_least4);
@@ -529,12 +651,13 @@ void print_process_from_vdump(FILE *fd)
         while(1){
             fseek(fd, next_pointer_value, SEEK_SET);	// process 1, next pointer
             fread(ptr_next, 4, 1, fd);	// assume this is a pointer
-            if( (*(unsigned int*)ptr_next) == proc_offset_of_next )	// If it points to the next pointer of the first process, we assume we have traversed all processes.
+            if( ((*(unsigned int*)ptr_next) == proc_offset_of_next) || ((*(unsigned int*)ptr_next) == 0) )	// If it points to the next pointer of the first process, we assume we have traversed all processes.
                 break;
             next_pointer_value=(*(unsigned int*)ptr_next);
             fseek(fd, next_pointer_value-(proc_offset_of_next-offset_of_name0), SEEK_SET);	// process 2, next pointer
             fread(ptr_name, BUFFER_SIZE, 1, fd);	// this should be the process name
-            printf("Name of the process is %s\n",ptr_name);
+            if(strlen(ptr_name) > 0) 
+                printf("Name of the process is %s\n",ptr_name);
             print_counter++;
         }
     }else{	// When "next" points to the start of the next structure, this is true for Linux Kernel 2.4 as well as FreeBSD 8.4.
@@ -546,13 +669,14 @@ void print_process_from_vdump(FILE *fd)
             while(1){
                 fseek(fd,( (next_pointer_value & 0xfffff000)+ (proc_offset_of_next & 0xfff) ), SEEK_SET);	// process 2, next pointer
                 fread(ptr_next, 4, 1, fd);	// assume this is a pointer
-                if( (*(unsigned int*)ptr_next) == (proc_offset_of_next & 0xfffff000) )	// If it points to the start address of the first process, we assume we have traversed all processes.
+                if( ((*(unsigned int*)ptr_next) == (proc_offset_of_next & 0xfffff000)) || ((*(unsigned int*)ptr_next) == 0) )	// If it points to the start address of the first process, we assume we have traversed all processes.
                     break;
                 next_pointer_value=(*(unsigned int*)ptr_next);
 //          fseek(fd, next_pointer_value-(proc_offset_of_next-offset_of_name0), SEEK_SET);	// process 2, next pointer
                 fseek(fd, next_pointer_value+offset_of_name0_least4, SEEK_SET);	// process 2, next pointer
                 fread(ptr_name, BUFFER_SIZE, 1, fd);	// this should be the process name
-                printf("Name of the process is %s\n",ptr_name);
+                if(strlen(ptr_name) > 0) 
+                    printf("Name of the process is %s\n",ptr_name);
                 print_counter++;
             }
         }else{
