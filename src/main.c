@@ -89,11 +89,20 @@ void print_process_from_vdump(FILE *fd);
 
 unsigned int bits = 32; // We support both 32bits and 64bits.
 
-unsigned int is_phys_dump = 0;	// FIXME: Currently we assume we are using virtual memory dump, rather then physical memory dump, but we should support physical memory dump in the future.
-unsigned int next_to_next = 1;	// We consider the linked list could be construted in two ways, either "next" points to "next", or "next" points to the start of the next structure.
-unsigned int second_pass = 0;	// Only for some rare cases, we need a second pass, for example, for FreeBSD 8.4 32bits.
-unsigned int task_4k_align=0;   // So far, we only know that Linux kernel 2.4 has such property, i.e., the task_struct is 4k-aligned.
-unsigned int print_counter = 0;	// Counts how many processes are there in the system.
+// FIXME: Currently we assume we are using virtual memory dump, rather then physical memory dump, but we should support physical memory dump in the future.
+unsigned int is_phys_dump = 0;	
+
+// We consider the linked list could be construted in two ways, either "next" points to "next", or "next" points to the start of the next structure.
+unsigned int next_to_next = 1;	
+
+// Only for some rare cases, we need a second pass, for example, for FreeBSD 8.4 32bits.
+unsigned int second_pass = 0;	
+
+// So far, we only know that Linux kernel 2.4 has such property, i.e., the task_struct is 4k-aligned.
+unsigned int task_4k_align=0;   
+
+// Counts how many processes are there in the system.
+unsigned int print_counter = 0;	
 
 static void help(void)
 {
@@ -121,25 +130,26 @@ void parse_options(int argc, char **argv)
 {
     int c;
     
-    for(;;) {
+    for (;;) {
         c = getopt(argc, argv, "d:t:m:l:o:h");
         if (c == -1) {
             break;
         }
-        switch(c) {
+        switch (c) {
         case '?':
         case 'h':
             help();
             break;
-        case 'd':    // dump type: virtual memory dump or physical memory dump.
+        case 'd': 
+            /* dump type: VA memory dump or PA memory dump. */
             printf("The dump type is %s\n", optarg);
-            if(strcmp(optarg,"phys")==0){
-                is_phys_dump=1;
+            if (strcmp(optarg, "phys") == 0) {
+                is_phys_dump = 1;
                 printf("Okay, so we are dealing with physical memory dump.\n");
-            }else if(strcmp(optarg,"virt")==0){
-                is_phys_dump=0;
+            } else if (strcmp(optarg, "virt") == 0) {
+                is_phys_dump = 0;
                 printf("Okay, so we are dealing with virtual memory dump.\n");
-            }else{
+            } else {
                 printf("The dump file has to be either virtual memory dump, or physical memory dump.\n");
                 exit(1);
             }
@@ -152,49 +162,49 @@ void parse_options(int argc, char **argv)
             break;
         case 'l':    // link type, next points the next or next points to the start of the next structure.
             printf("The link type is %s\n", optarg);
-            if(strcmp(optarg,"old")==0){
-                next_to_next=0;
+            if (strcmp(optarg, "old") == 0) {
+                next_to_next = 0;
                 printf("Okay, so we are dealing with old type of linked list.\n");
-            }else if(strcmp(optarg,"new")==0){
-                next_to_next=1;
+            } else if (strcmp(optarg, "new") == 0) {
+                next_to_next = 1;
                 printf("Okay, so we are dealing with new type of linked list.\n");
-            }else{
+            } else {
                 printf("The linked list has to be either old, i.e., next to start, or new, i.e., next to next.\n");
                 exit(1);
             }
             break;
         case 'o':
-            if(strcmp(optarg,"linux") == 0){
-                proc_name0="swapper";
-                proc_name1="init";
+            if (strcmp(optarg, "linux") == 0) {
+                proc_name0 = "swapper";
+                proc_name1 = "init";
                 printf("Okay, so we are dealing with Linux operating system dump.\n");
-            }else if(strcmp(optarg,"linux24") == 0){
-                proc_name0="swapper";
-                proc_name1="init";
-                task_4k_align=1;
-                next_to_next=0;
+            } else if (strcmp(optarg, "linux24") == 0) {
+                proc_name0 = "swapper";
+                proc_name1 = "init";
+                task_4k_align = 1;
+                next_to_next = 0;
                 printf("Okay, so we are dealing with Linux 2.4 operating system dump.\n");
-            }else if(strcmp(optarg,"win") == 0){
-                proc_name0="Idle";
-                proc_name1="System";
+            } else if (strcmp(optarg, "win") == 0) {
+                proc_name0 = "Idle";
+                proc_name1 = "System";
                 printf("Okay, so we are dealing with Windows operating system dump.\n");
-            }else if(strcmp(optarg,"win2000") == 0){
-                proc_name0="System";
-                proc_name1="smss";
-                proc_name2="csrss";
+            } else if(strcmp(optarg, "win2000") == 0) {
+                proc_name0 = "System";
+                proc_name1 = "smss";
+                proc_name2 = "csrss";
                 printf("Okay, so we are dealing with Windows operating system dump, older than win 2000.\n");
-            }else if(strcmp(optarg,"freebsd") == 0 ){
+            } else if (strcmp(optarg, "freebsd") == 0) {
 //                proc_name0="kernel";
 //                proc_name0="audit";    // Note, this is an optimization, the first process is kernel, but there are too many "kernel" in the memory, which makes the program super slow.
 //                proc_name0="init";
 //                proc_name0="idle";
-                proc_name0="g_event";
-                proc_name1="g_up";
-                proc_name2="g_down";
-                next_to_next=0;
-                second_pass=1;
+                proc_name0 = "g_event";
+                proc_name1 = "g_up";
+                proc_name2 = "g_down";
+                next_to_next = 0;
+                second_pass = 1;
                 printf("Okay, so we are dealing with FreeBSD operating system dump.\n");
-            }else{
+            } else {
                 printf("Sorry, The operating system dump you typed is not supported.\n");
                 exit(1);
             }
@@ -209,47 +219,58 @@ void parse_options(int argc, char **argv)
 
 int main(int argc, char *argv[])
 {
-        parse_options(argc, argv);
-        DPRINTF("project kick-off!\n");
-        if( (trusted_dump == NULL) || (monitored_dump == NULL) ){
-            printf("Either trusted dump file or monitored dump file not specified.\n");
-            printf("\n");
-            help();
-            return -1;
-        }
-        FILE* trusted_dumpfile = fopen(trusted_dump, "rb");
-        if (!trusted_dumpfile) {
-            printf("Unable to open dump file: %s\n", trusted_dump);
-            return -1;
-        }
-        if(is_phys_dump==0) {	// We are dealing with virtual memory dump.
-            printf("==================Get Process Offset from the Trusted OS=======================\n");
-            if(get_offsets_in_vdump(trusted_dumpfile) == -1){	// We need to get the offset of the first process name, second process name, and the offset of the first next pointer.
-                fclose(trusted_dumpfile);
-                return -1;
-            }
+    parse_options(argc, argv);
+    DPRINTF("project kick-off!\n");
+
+    if ((trusted_dump == NULL) || (monitored_dump == NULL)) {
+        help();
+        return -1;
+    }
+
+    FILE* trusted_dumpfile = fopen(trusted_dump, "rb");
+
+    if (!trusted_dumpfile) {
+        printf("Unable to open dump file: %s\n", trusted_dump);
+        return -1;
+    }
+    if (!is_phys_dump) {	
+        /* VA memory dump */
+        printf("==================Get Process Offset from the Trusted OS=======================\n");
+        
+        if (get_offsets_in_vdump(trusted_dumpfile) == -1) {	
+        // We need to get the offset of the first process name, second process name, and the offset of the first next pointer.
             fclose(trusted_dumpfile);
-            printf("==================Print Processes of the Monitoring OS=========================\n");
-            FILE* monitored_dumpfile = fopen(monitored_dump, "rb");
-            if (!monitored_dumpfile) {
-                printf("Unable to open dump file: %s\n", monitored_dump);
-                return -1;
-            }
+            return -1;
+        }
+        fclose(trusted_dumpfile);
+    
+        printf("==================Print Processes of the Monitoring OS=========================\n");
+        
+        FILE* monitored_dumpfile = fopen(monitored_dump, "rb");
+        if (!monitored_dumpfile) {
+            printf("Unable to open dump file: %s\n", monitored_dump);
+            return -1;
+        }
+
 	    print_process_from_vdump(trusted_dumpfile);
-            fclose(trusted_dumpfile);
-        }else {	// We are dealing with physical memory dump.
-            printf("==================Get Process Offset from the Trusted OS=======================\n");
-            get_offsets_in_pdump(trusted_dumpfile);  // Get the offset of pid, process name, and next pointer
-            fclose(trusted_dumpfile);
-            printf("==================Print Processes of the Monitoring OS=========================\n");
-            FILE* monitored_dumpfile = fopen(monitored_dump, "rb");
-            if (!monitored_dumpfile) {
-                printf("Unable to open dump file: %s\n", monitored_dump);
-                return -1;
-            }
-            print_processes_from_pdump(monitored_dumpfile); // Print the process list of the monitoring Guest OS
-            fclose(monitored_dumpfile);
+        fclose(trusted_dumpfile);
+    } else {	
+        /* PA memory dump */
+        printf("==================Get Process Offset from the Trusted OS=======================\n");
+        
+        get_offsets_in_pdump(trusted_dumpfile);  // Get the offset of pid, process name, and next pointer
+        fclose(trusted_dumpfile);
+        
+        printf("==================Print Processes of the Monitoring OS=========================\n");
+        
+        FILE* monitored_dumpfile = fopen(monitored_dump, "rb");
+        if (!monitored_dumpfile) {
+            printf("Unable to open dump file: %s\n", monitored_dump);
+            return -1;
         }
+        print_processes_from_pdump(monitored_dumpfile); // Print the process list of the monitoring Guest OS
+        fclose(monitored_dumpfile);
+    }
     return 0;
 }
 
