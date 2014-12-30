@@ -1,0 +1,89 @@
+~/jidong/hyperps$ ./bin/main -o freebsd dump.4g.free61 dump.4g.free61 
+Okay, so we are dealing with FreeBSD 8.x operating system dump.
+project kick-off!
+==================Get Process Offset from the Trusted OS=======================
+===We need a second pass to get the offsets.===
+So the address for the first process's name is: 0xc042ddf1
+So the address for the first process's name is: 0xc08a3598
+So the address for the second process's name is: 0xc08a3593
+So the address for the first process's name is: 0xc0a3f07a
+So the address for the second process's name is: 0xc0a3f2bc
+So the address for the first process's name is: 0xc0a796e3
+So the address for the first process's name is: 0xc4aa6394
+So the address for the second process's name is: 0xc4aa6188
+min is 0xc4aa5d88
+value_of_next0 is 0xc4aa6018
+max is 0xc4aa6588
+min is 0xc4aa5d88
+value_of_next0 is 0xc4aa6068
+max is 0xc4aa6588
+min is 0xc4aa5d88
+value_of_next0 is 0xc4aa6000
+max is 0xc4aa6588
+min is 0xc4aa5d88
+value_of_next0 is 0xc4aa6000
+max is 0xc4aa6588
+offset_of_name_in_task is 0x188
+offset_of_next_in_task is 0x4
+value_of_next1 is 0xc4af3418
+the buffer we read in is g_down�
+and proc_name2 is g_down
+Now we found the offset of the next pointer of the first process is 0xc4aa6210
+And the address for the first process name is: 0xc4aa6394
+And the address for the second process name is: 0xc4aa6188
+offset_of_name_in_task is 0x188
+offset_of_next_in_task is 0x4
+==================Print Processes of the Monitoring OS=========================
+Name of the process is g_event
+Name of the process is g_up
+Name of the process is g_down
+Name of the process is yarrow
+Name of the process is thread taskq
+Name of the process is swi5: +
+Name of the process is kqueue taskq
+Name of the process is swi2: cambio
+Name of the process is acpi_task0
+Name of the process is acpi_task1
+Name of the process is acpi_task2
+Name of the process is swi6: task queue
+Name of the process is swi6: +
+Name of the process is irq9: acpi0
+Name of the process is irq14: ata0
+Name of the process is irq15: ata1
+Name of the process is irq11: em0
+Name of the process is irq1: atkbd0
+Name of the process is irq12: psm0
+Name of the process is irq7: ppc0
+Name of the process is swi0: sio
+Name of the process is pagedaemon
+Name of the process is vmdaemon
+Name of the process is pagezero
+Name of the process is bufdaemon
+Name of the process is syncer
+Name of the process is vnlru
+Name of the process is softdepflush
+Name of the process is nfsiod 0
+Name of the process is nfsiod 1
+Name of the process is nfsiod 2
+Name of the process is nfsiod 3
+Name of the process is schedcpu
+Name of the process is devd
+Name of the process is syslogd
+Name of the process is sendmail
+Name of the process is sendmail
+Name of the process is cron
+Name of the process is sh
+Name of the process is logger
+Name of the process is sh
+Name of the process is sleep
+Name of the process is login
+Name of the process is getty
+Name of the process is getty
+Name of the process is getty
+Name of the process is getty
+Name of the process is getty
+Name of the process is getty
+Name of the process is getty
+Name of the process is csh
+Total number of processes: 52
+
