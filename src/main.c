@@ -90,6 +90,7 @@ void print_process_from_vdump(FILE *fd);
 unsigned int bits = 32; // We support both 32bits and 64bits.
 
 unsigned int is_linux = 0; // For linux 32bits os, we can have some optimizations, because kernel space starts from 0xc000 0000, therefore, we don't have to search from the begining.
+unsigned int is_win = 0; // For win 32bits os, we can have some optimizations, because kernel space starts from 0x8000 0000, therefore, we don't have to search from the begining.
 
 // FIXME: Currently we assume we are using virtual memory dump, rather then physical memory dump, but we should support physical memory dump in the future.
 unsigned int is_phys_dump = 0;	
@@ -189,10 +190,12 @@ void parse_options(int argc, char **argv)
                 next_to_next = 0;
                 printf("Okay, so we are dealing with Linux 2.4 operating system dump.\n");
             } else if (strcmp(optarg, "win") == 0) {
+                is_win = 1;
                 proc_name0 = "Idle";
                 proc_name1 = "System";
                 printf("Okay, so we are dealing with Windows operating system dump.\n");
             } else if(strcmp(optarg, "win2000") == 0) {
+                is_win = 1;
                 proc_name0 = "System";
                 proc_name1 = "smss";
                 proc_name2 = "csrss";
@@ -437,8 +440,13 @@ int vdump_get_offsets_point_to_linkedlist(FILE *fd)
     char ptr_next[4];
     char buffer[BUFFER_SIZE];
     
-    if (is_linux == 1) { // For Linux 32bits, we do have this optimization, because kernel space starts from 0xc0000000.
+    if (is_linux == 1) { // For Linux 32bits, we do have this optimization, because kernel space starts from 0xc000 0000.
         starting_addr = 0xc0000000;
+        ptr_mark1 = starting_addr;
+    }
+
+    if (is_win == 1) { // For Win 32bits, we do have this optimization, because kernel space starts from 0x8000 0000.
+        starting_addr = 0x80000000;
         ptr_mark1 = starting_addr;
     }
 
@@ -540,6 +548,11 @@ int vdump_get_offsets_point_to_task_struct(FILE *fd)
 
     if (is_linux == 1) { // For Linux 32bits, we do have this optimization, because kernel space starts from 0xc0000000.
         starting_addr = 0xc0000000;
+        ptr_mark1 = starting_addr;
+    }
+
+    if (is_win == 1) { // For Windows 32bits, we do have this optimization, because kernel space starts from 0x80000000.
+        starting_addr = 0x80000000;
         ptr_mark1 = starting_addr;
     }
 
