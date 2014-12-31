@@ -1,0 +1,51 @@
+Now we found the offset of the next pointer of the first process is 0xc0364c38
+And the address for the first process name is: 0xc0364e26
+And the address for the second process name is: 0xf7ea19b6
+==================Print Processes of the Monitoring OS=========================
+Name of the process is swapper
+Name of the process is init
+Name of the process is ksoftirqd/0
+Name of the process is events/0
+Name of the process is khelper
+Name of the process is kacpid
+Name of the process is kblockd/0
+Name of the process is pdflush
+Name of the process is pdflush
+Name of the process is aio/0
+Name of the process is khubd
+Name of the process is kswapd0
+Name of the process is kseriod
+Name of the process is kmirrord
+Name of the process is kjournald
+Name of the process is udevd
+Name of the process is kauditd
+Name of the process is kjournald
+Name of the process is dhclient
+Name of the process is syslogd
+Name of the process is klogd
+Name of the process is portmap
+Name of the process is rpc.statd
+Name of the process is rpc.idmapd
+Name of the process is smartd
+Name of the process is acpid
+Name of the process is cupsd
+Name of the process is sshd
+Name of the process is xinetd
+Name of the process is sendmail
+Name of the process is sendmail
+Name of the process is gpm
+Name of the process is crond
+Name of the process is xfs
+Name of the process is anacron
+Name of the process is atd
+Name of the process is dbus-daemon-1
+Name of the process is hald
+Name of the process is login
+Name of the process is mingetty
+Name of the process is mingetty
+Name of the process is mingetty
+Name of the process is mingetty
+Name of the process is mingetty
+Name of the process is bash
+Total number of processes: 45
+
