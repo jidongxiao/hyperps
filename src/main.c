@@ -492,7 +492,7 @@ int vdump_get_offsets_point_to_linkedlist(FILE *fd)
 
                     int i;
                     // assuming the "next" pointer is before or after the "name", but within 1 page distance.
-                    for(i = 0; i < 256; i++) {
+                    for(i = 0; i < 512; i++) {
                         fread(ptr_next, 4, 1, fd);  // assume this is a pointer
 //                      printf("when i is %d, we assume this is the next pointer: 0x%x  ", i, (*(unsigned int*)ptr_next));
 //                      printf("And the next pointer of process 1 (right hand)  is at: 0x%lx\n", (offset_of_name1-0x400+i*4) );
@@ -508,7 +508,7 @@ int vdump_get_offsets_point_to_linkedlist(FILE *fd)
                     fseek(fd, offset_of_name0 - 0x402, SEEK_SET);
 
                     // assuming the "next" pointer is before or after the "name", but within 1 page distance.
-                    for(i = 0; i < 257; i++) {
+                    for(i = 0; i < 514; i++) {
                         fread(ptr_next, 4, 1, fd);  // assume this is a pointer
 //                      printf("when i is %d, we assume this is the next pointer: 0x%x  ", i, (*(unsigned int*)ptr_next));
 //                      printf("And the next pointer of process 1 (right hand)  is at: 0x%lx\n", (offset_of_name1-0x402+i*4) );
