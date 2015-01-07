@@ -200,6 +200,13 @@ void parse_options(int argc, char **argv)
                 proc_name1 = "smss";
                 proc_name2 = "csrss";
                 printf("Okay, so we are dealing with Windows operating system dump, older than win 2000.\n");
+            } else if (strcmp(optarg, "mac") == 0) {
+                proc_name0 = "kernel_task";
+                proc_name1 = "launchd";
+                proc_name2 = "kextd";
+                next_to_next = 0;
+                second_pass = 1;
+                printf("Okay, so we are dealing with Mac OS X operating system dump.\n");
             } else if (strcmp(optarg, "freebsd") == 0) {
 //                proc_name0="kernel";
 //                proc_name0="audit";    // Note, this is an optimization, the first process is kernel, but there are too many "kernel" in the memory, which makes the program super slow.
@@ -698,10 +705,10 @@ long get_offsets_in_vdump_second_pass(FILE* fd)    // When "next" points to the 
                 name_pos1 = (char*) memmem(buffer, BUFFER_SIZE, proc_name1, strlen(proc_name1));    // search for the name of the second process, for Linux, it is "init", for Windows, it is "System".
                 if (name_pos1 != NULL) {    // now we also got the second process's name string
                     offset_of_name1 = name_pos1 - buffer + read_counter1 * BUFFER_SIZE;     // offset (from the start of the dump file) of the second process's name string.
-                    if( (offset_of_name1 < offset_of_name0 - 4096) || (offset_of_name1 > offset_of_name0 + 4096) ) {   // FIXME: This is an optimization, based on my experience, for FreeBSD 32bits, the gap between offset_of_name0 and offset_of_name1 is usually less than 4096 bytes, but this might be wrong if we test more FreeBSD images.
-                        read_counter1++;
-                        continue;
-                    }
+//                    if( (offset_of_name1 < offset_of_name0 - 4096) || (offset_of_name1 > offset_of_name0 + 4096) ) {   // FIXME: This is an optimization, based on my experience, for FreeBSD 32bits, the gap between offset_of_name0 and offset_of_name1 is usually less than 4096 bytes, but this might be wrong if we test more FreeBSD images.
+//                        read_counter1++;
+//                        continue;
+//                    }
                     printf("So the address for the second process's name is: 0x%lx\n", offset_of_name1);
 //                    ptr_mark2=offset_of_name0-4096;
                     ptr_mark2=offset_of_name0-0x400;    // FIXME: we use hardcode here, based on our experience, the gap between next to name is usually less than 1024 bytes, which is 0x400.
@@ -808,7 +815,10 @@ void print_process_from_vdump(FILE *fd)
             fseek(fd, next_pointer_value, SEEK_SET);	// process 1, next pointer
             fread(ptr_next, 4, 1, fd);	// assume this is a pointer
             if( ((*(unsigned int*)ptr_next) == proc_offset_of_next) || ((*(unsigned int*)ptr_next) == 0) )	// If it points to the next pointer of the first process, we assume we have traversed all processes.
+            {
+                printf("Total number of processes: %d\n", print_counter);
                 break;
+            }
             next_pointer_value=(*(unsigned int*)ptr_next);
             fseek(fd, next_pointer_value-(proc_offset_of_next-offset_of_name0), SEEK_SET);	// process 2, next pointer
             fread(ptr_name, BUFFER_SIZE, 1, fd);	// this should be the process name
@@ -826,12 +836,15 @@ void print_process_from_vdump(FILE *fd)
                 fseek(fd,( (next_pointer_value & 0xfffff000)+ (proc_offset_of_next & 0xfff) ), SEEK_SET);	// process 2, next pointer
                 fread(ptr_next, 4, 1, fd);	// assume this is a pointer
                 if( ((*(unsigned int*)ptr_next) == (proc_offset_of_next & 0xfffff000)) || ((*(unsigned int*)ptr_next) == 0) )	// If it points to the start address of the first process, we assume we have traversed all processes.
+                {
+                    printf("Total number of processes: %d\n", print_counter);
                     break;
+                }
                 next_pointer_value=(*(unsigned int*)ptr_next);
 //          fseek(fd, next_pointer_value-(proc_offset_of_next-offset_of_name0), SEEK_SET);	// process 2, next pointer
                 fseek(fd, next_pointer_value+offset_of_name0_least4, SEEK_SET);	// process 2, next pointer
                 fread(ptr_name, BUFFER_SIZE, 1, fd);	// this should be the process name
-                if(strlen(ptr_name) > 0) 
+                if( (strlen(ptr_name) > 0) && (strlen(ptr_name) < 50) ) 
                     printf("Name of the process is %s\n",ptr_name);
                 print_counter++;
             }
@@ -840,19 +853,21 @@ void print_process_from_vdump(FILE *fd)
                 fseek(fd,( next_pointer_value + offset_of_next_in_task ), SEEK_SET);	// process 2, next pointer
                 fread(ptr_next, 4, 1, fd);	// assume this is a pointer
                 if( (*(unsigned int*)ptr_next) == (proc_offset_of_next - offset_of_next_in_task) || ((*(unsigned int*)ptr_next) == 0) )	// If it points to the start address of the first process, we assume we have traversed all processes.
+                {
+                    printf("Total number of processes: %d\n", print_counter);
                     break;
+                }
                 next_pointer_value=(*(unsigned int*)ptr_next);
 //                printf("next_pointer_value is 0x%lx\n", next_pointer_value);
 //          fseek(fd, next_pointer_value-(proc_offset_of_next-offset_of_name0), SEEK_SET);	// process 2, next pointer
                 fseek(fd, next_pointer_value+offset_of_name_in_task, SEEK_SET);	// process 2, next pointer
                 fread(ptr_name, BUFFER_SIZE, 1, fd);	// this should be the process name
-                if(strlen(ptr_name) > 0) 
+                if( (strlen(ptr_name) > 0) && (strlen(ptr_name) < 50) ) 
                     printf("Name of the process is %s\n", ptr_name);
                 print_counter++;
             }
         }
     }
-    printf("Total number of processes: %d\n", print_counter);
 
 }
 
