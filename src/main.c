@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include "hyperps/debug.h"
+#include "hyperps/task.h"
 
 #define BUFFER_SIZE 4096
 #define KERNEL_BASE 0xC0000000
@@ -68,7 +69,8 @@ long offset_of_name0 = -1;
 long offset_of_name0_align4 = -1;
 long offset_of_name0_least4 = -1;
 long offset_of_name1 = -1;
-long proc_offset_of_next;
+long offset_of_name2 = -1;
+long proc_offset_of_next;  // absolute offset of the first next pointer in the dump file
 long offset_of_name;
 long offset_of_next;
 unsigned long offset_of_pid;
@@ -106,6 +108,11 @@ unsigned int task_4k_align=0;
 
 // Counts how many processes are there in the system.
 unsigned int print_counter = 0;	
+
+struct hl_task_struct_offsets *task_offsets;
+struct hl_task_struct *task0;
+struct hl_task_struct *task1;
+struct hl_task_struct *task2;
 
 static void help(void)
 {
@@ -181,7 +188,10 @@ void parse_options(int argc, char **argv)
                 is_linux = 1;
                 proc_name0 = "swapper";
                 proc_name1 = "init";
-                printf("Okay, so we are dealing with Linux operating system dump.\n");
+                task0->pid = 0;
+                task1->pid = 1;
+                task2->pid = 2;
+                printf("OS Type: Linux\n");
             } else if (strcmp(optarg, "linux24") == 0) {
                 is_linux = 1;
                 proc_name0 = "swapper";
@@ -204,9 +214,12 @@ void parse_options(int argc, char **argv)
                 proc_name0 = "kernel_task";
                 proc_name1 = "launchd";
                 proc_name2 = "kextd";
+                task0->pid = 0;
+                task1->pid = 1;
+                task2->pid = 21;
                 next_to_next = 0;
                 second_pass = 1;
-                printf("Okay, so we are dealing with Mac OS X operating system dump.\n");
+                printf("OS Type: Mac OS X\n");
             } else if (strcmp(optarg, "freebsd") == 0) {
 //                proc_name0="kernel";
 //                proc_name0="audit";    // Note, this is an optimization, the first process is kernel, but there are too many "kernel" in the memory, which makes the program super slow.
@@ -249,44 +262,55 @@ void parse_options(int argc, char **argv)
 
 int main(int argc, char *argv[])
 {
+    task0 = (struct hl_task_struct *)malloc(sizeof(struct hl_task_struct));
+    task1 = (struct hl_task_struct *)malloc(sizeof(struct hl_task_struct));
+    task2 = (struct hl_task_struct *)malloc(sizeof(struct hl_task_struct));
+    task_offsets = (struct hl_task_struct_offsets *)malloc(sizeof(struct hl_task_struct_offsets));
+    task_offsets->name = 0;
+    task0->pid = -1;
+    task1->pid = -1;
+    task2->pid = -1;
+
+    printf("-------\n");
     parse_options(argc, argv);
-    DPRINTF("project kick-off!\n");
+//    DPRINTF("project kick-off!\n");
 
     if ((trusted_dump == NULL) || (monitored_dump == NULL)) {
         help();
-        return -1;
+        goto out;
     }
 
     FILE* trusted_dumpfile = fopen(trusted_dump, "rb");
 
     if (!trusted_dumpfile) {
         printf("Unable to open dump file: %s\n", trusted_dump);
-        return -1;
+        goto out;
     }
     if (!is_phys_dump) {	
         /* VA memory dump */
-        printf("==================Get Process Offset from the Trusted OS=======================\n");
+//        printf("==================Get Process Offsets from the Trusted OS=======================\n");
         
         if (get_offsets_in_vdump(trusted_dumpfile) == -1) {	
         // We need to get the offset of the first process name, second process name, and the offset of the first next pointer.
             fclose(trusted_dumpfile);
-            return -1;
+            goto out;
         }
         fclose(trusted_dumpfile);
     
-        printf("==================Print Processes of the Monitoring OS=========================\n");
+//        printf("==================Print Processes of the Monitoring OS=========================\n");
+        printf("-------\n");
         
         FILE* monitored_dumpfile = fopen(monitored_dump, "rb");
         if (!monitored_dumpfile) {
             printf("Unable to open dump file: %s\n", monitored_dump);
-            return -1;
+            goto out;
         }
 
 	    print_process_from_vdump(trusted_dumpfile);
         fclose(trusted_dumpfile);
     } else {	
         /* PA memory dump */
-        printf("==================Get Process Offset from the Trusted OS=======================\n");
+        printf("==================Get Process Offsets from the Trusted OS=======================\n");
         
         get_offsets_in_pdump(trusted_dumpfile);  // Get the offset of pid, process name, and next pointer
         fclose(trusted_dumpfile);
@@ -296,12 +320,20 @@ int main(int argc, char *argv[])
         FILE* monitored_dumpfile = fopen(monitored_dump, "rb");
         if (!monitored_dumpfile) {
             printf("Unable to open dump file: %s\n", monitored_dump);
-            return -1;
+            goto out;
         }
         print_processes_from_pdump(monitored_dumpfile); // Print the process list of the monitoring Guest OS
         fclose(monitored_dumpfile);
     }
+
     return 0;
+
+out:
+    free(task0);
+    free(task1);
+    free(task2);
+    free(task_offsets);
+    return -1;
 }
 
 long get_offset_of_name(FILE * fd, char* target_name) 
@@ -472,7 +504,7 @@ int vdump_get_offsets_point_to_linkedlist(FILE *fd)
             
             // offset (from the start of the dump file) of the name string.
             offset_of_name0 = name_pos0 - buffer + starting_addr + read_counter0 * BUFFER_SIZE; 
-            printf("Address for the first process name is: 0x%lx\n", offset_of_name0);
+//            printf("Address for the first process name is: 0x%lx\n", offset_of_name0);
             //continue;   // This line is crucial when we want to debug.
             
             /* Start from pos = 0 and search for second process name */
@@ -489,7 +521,7 @@ int vdump_get_offsets_point_to_linkedlist(FILE *fd)
                     
                     // offset (from the start of the dump file) of the second process's name string.
                     offset_of_name1 = name_pos1 - buffer + starting_addr + read_counter1 * BUFFER_SIZE; 
-                    printf("Address for the second process name is: 0x%lx\n", offset_of_name1);
+//                    printf("Address for the second process name is: 0x%lx\n", offset_of_name1);
                     
                     /* Search for the next pointer position.
                      * Ranging from (offset of first process name - 1 page) to (offset of first process name + 1 page)
@@ -504,10 +536,11 @@ int vdump_get_offsets_point_to_linkedlist(FILE *fd)
 //                      printf("when i is %d, we assume this is the next pointer: 0x%x  ", i, (*(unsigned int*)ptr_next));
 //                      printf("And the next pointer of process 1 (right hand)  is at: 0x%lx\n", (offset_of_name1-0x400+i*4) );
                         if ((*(unsigned int*)ptr_next) == offset_of_name1-0x400+i*4) {
-                            proc_offset_of_next = offset_of_name0+i*4-0x400;
-                            printf("Now we found the offset of the next pointer of the first process is 0x%lx\n", offset_of_name0+i*4-0x400);
-                            printf("And the address for the first process name is: 0x%lx\n", offset_of_name0);
-                            printf("And the address for the second process name is: 0x%lx\n", offset_of_name1);
+                            proc_offset_of_next = offset_of_name0+i*4-0x400;  // offset in the dump file.
+                            task_offsets->next = proc_offset_of_next - offset_of_name0;  // offset in the task_struct, counting from name.
+//                            printf("Now we found the offset of the next pointer of the first process is 0x%lx\n", offset_of_name0+i*4-0x400);
+//                            printf("And the address for the first process name is: 0x%lx\n", offset_of_name0);
+//                            printf("And the address for the second process name is: 0x%lx\n", offset_of_name1);
                             return 1;
                         }
                     }
@@ -520,10 +553,11 @@ int vdump_get_offsets_point_to_linkedlist(FILE *fd)
 //                      printf("when i is %d, we assume this is the next pointer: 0x%x  ", i, (*(unsigned int*)ptr_next));
 //                      printf("And the next pointer of process 1 (right hand)  is at: 0x%lx\n", (offset_of_name1-0x402+i*4) );
                         if ((*(unsigned int*)ptr_next) == offset_of_name1-0x402+i*4) {
-                            proc_offset_of_next = offset_of_name0+i*4-0x402;
-                            printf("Now we found the offset of the next pointer of the first process is 0x%lx\n", offset_of_name0+i*4-0x402);
-                            printf("And the address for the first process name is: 0x%lx\n", offset_of_name0);
-                            printf("And the address for the second process name is: 0x%lx\n", offset_of_name1);
+                            proc_offset_of_next = offset_of_name0+i*4-0x402; // offset in the dump file.
+                            task_offsets->next = proc_offset_of_next - offset_of_name0;  // offset in the task_struct, counting from name.
+//                            printf("Now we found the offset of the next pointer of the first process is 0x%lx\n", offset_of_name0+i*4-0x402);
+//                            printf("And the address for the first process name is: 0x%lx\n", offset_of_name0);
+//                            printf("And the address for the second process name is: 0x%lx\n", offset_of_name1);
                             return 1;
                         }
                     }
@@ -583,7 +617,7 @@ int vdump_get_offsets_point_to_task_struct(FILE *fd)
 
             // We need to store the lower 4 bits
             offset_of_name0_least4 = offset_of_name0 & 0xfff;
-            printf("Address for the first process's name is: 0x%lx\n", offset_of_name0);
+//            printf("Address for the first process's name is: 0x%lx\n", offset_of_name0);
 
             //Read from the begining
             fseek(fd, starting_addr, SEEK_SET);
@@ -602,7 +636,7 @@ int vdump_get_offsets_point_to_task_struct(FILE *fd)
 
                     // offset (from the start of the dump file) of the second process's name string.
                     offset_of_name1 = name_pos1 - buffer + starting_addr + read_counter1 * BUFFER_SIZE;
-                    printf("Address for the second process's name is: 0x%lx\n", offset_of_name1);
+//                    printf("Address for the second process's name is: 0x%lx\n", offset_of_name1);
                     /* Align offset to 4K for the next read */
                     fseek(fd, offset_of_name0_align4, SEEK_SET);
                     int i;
@@ -614,9 +648,9 @@ int vdump_get_offsets_point_to_task_struct(FILE *fd)
                         /* Check if there is any pointer points to 4K-aligned offset of the second process' name */
                         if ((*(unsigned int*) ptr_next) == (offset_of_name1 & 0xfffff000)) {
                             proc_offset_of_next = offset_of_name0_align4+i*4;
-                            printf("Now we found the offset of the next pointer of the first process is 0x%lx\n", offset_of_name0_align4+i*4);
-                            printf("And the address for the first process name is: 0x%lx\n", offset_of_name0);
-                            printf("And the address for the second process name is: 0x%lx\n", offset_of_name1);
+//                            printf("Now we found the offset of the next pointer of the first process is 0x%lx\n", offset_of_name0_align4+i*4);
+//                            printf("And the address for the first process name is: 0x%lx\n", offset_of_name0);
+//                            printf("And the address for the second process name is: 0x%lx\n", offset_of_name1);
                             return 1;
                         }
                     }
@@ -636,27 +670,92 @@ int vdump_get_offsets_point_to_task_struct(FILE *fd)
     return 0;
 }
 
+long vdump_get_offset_of_pid(FILE* fd)
+{
+    // When we calculate the offset of pid, we call fread and store the output in ptr_pid[]
+    char ptr_pid[4];
+    char ptr_next[4];
+    long ptr_mark0 = 0;
+
+    if(offset_of_name2 == -1)  // If we have not got offset_of_name2
+    {
+        fseek(fd, offset_of_name1 + task_offsets->next, SEEK_SET); // seek to the next pointer of the 2nd process
+        fread(ptr_next, 4, 1, fd);
+        offset_of_name2 = (*(unsigned int*)ptr_next) - task_offsets->next;  // get the absolute offset of the name of the 3rd process
+    }
+//    printf("And the address for the 3rd process name is: 0x%lx\n", offset_of_name2);
+    /* Search for the pid position.
+     * Ranging from (offset of first process name - 1 page) to (offset of first process name + 1 page)
+     */
+    fseek(fd, offset_of_name1 - 0x400, SEEK_SET);
+
+    int i;
+    // assuming the "pid" is before or after the "name", but within 1 page distance.
+    for(i = 0; i < 512; i++) {
+        fread(ptr_pid, 4, 1, fd);  // assume this is a pointer
+        ptr_mark0 = ftell(fd);
+        if ((*(unsigned int*)ptr_pid) == task1->pid) {
+//            printf("1. Now we found the pid of task1 at address 0x%lx is %d\n", offset_of_name1 + i*4 - 0x400, (*(unsigned int*)ptr_pid) );
+            fseek(fd, offset_of_name2 + i*4 - 0x400, SEEK_SET);
+            fread(ptr_pid, 4, 1, fd);
+//            printf("1. Now we found the pid of task2 at address 0x%lx is %d\n", offset_of_name2 + i*4 - 0x400, (*(unsigned int*)ptr_pid) );
+            if ((*(unsigned int*)ptr_pid) == task2->pid) {
+                task_offsets->pid = task_offsets->name + i*4 - 0x400;
+//                printf("Now we found the offset of the pid, it is %lx\n", task_offsets->pid);
+                return 1;
+            }
+            fseek(fd, ptr_mark0, SEEK_SET);
+        }
+    }
+
+    fseek(fd, offset_of_name1 - 0x402, SEEK_SET);
+
+    // assuming the "pid" is before or after the "name", but within 1 page distance.
+    for(i = 0; i < 512; i++) {
+        fread(ptr_pid, 4, 1, fd);  // assume this is a pointer
+        ptr_mark0 = ftell(fd);
+        if ((*(unsigned int*)ptr_pid) == task1->pid) {
+//            printf("2. Now we found the pid of task1 at address 0x%lx is %d\n", offset_of_name1 + i*4 - 0x402, (*(unsigned int*)ptr_pid) );
+            fseek(fd, offset_of_name2 + i*4 - 0x402, SEEK_SET);
+            fread(ptr_pid, 4, 1, fd);
+//            printf("2. Now we found the pid of task2 at address 0x%lx is %d\n", offset_of_name2 + i*4 - 0x402, (*(unsigned int*)ptr_pid) );
+            if ((*(unsigned int*)ptr_pid) == task2->pid) {
+                task_offsets->pid = task_offsets->name + i*4 - 0x402;
+//                printf("Now we found the offset of the pid, it is %lx\n", task_offsets->pid);
+                return 1;
+            }
+            fseek(fd, ptr_mark0, SEEK_SET);
+        }
+    }
+
+    return 0;
+
+}
 
 long get_offsets_in_vdump(FILE* fd)
 {
     long found_next = 0;
+    task_offsets->pid = -1;
 
     if (next_to_next == 1) {
     /* When "next" points to the "next" pointer, rather than the start of the next structure, this is true for Linux Kernel 2.6 as well as for Windows 7. */
         found_next = vdump_get_offsets_point_to_linkedlist(fd);
+        vdump_get_offset_of_pid(fd);
     } else if (task_4k_align == 1) {
     /* When "next" points to the start of the next structure, and the task_struct is 4k-aligned, this is true for Linux Kernel 2.4. */
         found_next = vdump_get_offsets_point_to_task_struct(fd);
+        vdump_get_offset_of_pid(fd);
     }    
 
     if (found_next == 1) {
         return 0;
     } else {
         second_pass = 1;
-        printf("===We need a second pass to get the offsets.===\n");
+//        printf("===We need a second pass to get the offsets.===\n");
         if (get_offsets_in_vdump_second_pass(fd) == -1) {
             return -1;	// we could not find the offsets to construct the linked list
         } else {
+            vdump_get_offset_of_pid(fd);
             return 0;
         }
     }
@@ -687,10 +786,7 @@ long get_offsets_in_vdump_second_pass(FILE* fd)    // When "next" points to the 
         name_pos0 = (char*) memmem(buffer, BUFFER_SIZE, proc_name0, strlen(proc_name0));    // search for the name of first process, for Linux, it is "swapper", for Windows, it is "Idle"
         if (name_pos0 != NULL) {    // now we got the first process's name string
             offset_of_name0 = name_pos0 - buffer + read_counter0 * BUFFER_SIZE;     // offset (from the start of the dump file) of the name string.
-//            offset_of_name0_align4 = offset_of_name0 & 0xfffff000;  // We need to clean the lower 4 bits, for Linux Kernel 2.4, the task_struct is 4K page align.
-//            offset_of_name0_least4 = offset_of_name0 & 0xfff;       // We need to store the lower 4 bits
-//              printf("So the least 4 bits of offset_of_name0 is: 0x%lx\n", offset_of_name0_least4);
-            printf("So the address for the first process's name is: 0x%lx\n", offset_of_name0);
+//            printf("So the address for the first process's name is: 0x%lx\n", offset_of_name0);
 //            printf("And the read_counter0 is: %d\n", read_counter0);
 //            {//for debug only, remind to remove all the following lines.
 //              read_counter0++;
@@ -709,7 +805,7 @@ long get_offsets_in_vdump_second_pass(FILE* fd)    // When "next" points to the 
 //                        read_counter1++;
 //                        continue;
 //                    }
-                    printf("So the address for the second process's name is: 0x%lx\n", offset_of_name1);
+//                    printf("So the address for the second process's name is: 0x%lx\n", offset_of_name1);
 //                    ptr_mark2=offset_of_name0-4096;
                     ptr_mark2=offset_of_name0-0x400;    // FIXME: we use hardcode here, based on our experience, the gap between next to name is usually less than 1024 bytes, which is 0x400.
 //                    fseek(fd,offset_of_name0-4096,SEEK_SET);      // search the next pointer, let's go back 4096 bytes, and start from there.
@@ -729,28 +825,29 @@ long get_offsets_in_vdump_second_pass(FILE* fd)    // When "next" points to the 
                         if ( ((*(unsigned int*)ptr_next) >= (offset_of_name1 - 0x400)) && ((*(unsigned int*)ptr_next) < offset_of_name1) ){    // Our experience is next is always in front of name.
                             proc_offset_of_next = offset_of_name0 - 0x400 + i*4;
                             value_of_next0 = (*(unsigned int*)ptr_next);
-                            printf("min is 0x%lx\n", offset_of_name1 - 0x400);
-                            printf("value_of_next0 is 0x%lx\n", value_of_next0);
-                            printf("max is 0x%lx\n", offset_of_name1 + 0x400);
+//                            printf("min is 0x%lx\n", offset_of_name1 - 0x400);
+//                            printf("value_of_next0 is 0x%lx\n", value_of_next0);
+//                            printf("max is 0x%lx\n", offset_of_name1 + 0x400);
                             offset_of_name_in_task = offset_of_name1 - value_of_next0;
                             if(proc_offset_of_next < (offset_of_name0 - offset_of_name_in_task)) // This does not make sense, i.e., when next is before the start of the structure.
                                 continue;
                             offset_of_next_in_task = proc_offset_of_next - (offset_of_name0 - offset_of_name_in_task);
-                            printf("offset_of_name_in_task is 0x%lx\n", offset_of_name_in_task);
-                            printf("offset_of_next_in_task is 0x%lx\n", offset_of_next_in_task);
+//                            printf("offset_of_name_in_task is 0x%lx\n", offset_of_name_in_task);
+//                            printf("offset_of_next_in_task is 0x%lx\n", offset_of_next_in_task);
                             fseek(fd, value_of_next0+offset_of_next_in_task, SEEK_SET);
                             fread(ptr_next, 4, 1, fd);  // assume this is a pointer
                             value_of_next1 = (*(unsigned int*)ptr_next);
-                            printf("value_of_next1 is 0x%lx\n", value_of_next1);
+//                            printf("value_of_next1 is 0x%lx\n", value_of_next1);
                             fseek(fd, value_of_next1+offset_of_name_in_task, SEEK_SET);
                             fread(buffer, strlen(proc_name2), 1, fd);
-                            printf("the buffer we read in is %s\n", buffer);
-                            printf("and proc_name2 is %s\n", proc_name2);
+//                            printf("the buffer we read in is %s\n", buffer);
+//                            printf("and proc_name2 is %s\n", proc_name2);
                             if( strstr(buffer, proc_name2) != NULL ){
                                 found_next = 1;
-                                printf("Now we found the offset of the next pointer of the first process is 0x%lx\n", proc_offset_of_next);
-                                printf("And the address for the first process name is: 0x%lx\n", offset_of_name0);
-                                printf("And the address for the second process name is: 0x%lx\n", offset_of_name1);
+                                offset_of_name2 = value_of_next1+offset_of_name_in_task;
+//                                printf("Now we found the offset of the next pointer of the first process is 0x%lx\n", proc_offset_of_next);
+//                                printf("And the address for the first process name is: 0x%lx\n", offset_of_name0);
+//                                printf("And the address for the second process name is: 0x%lx\n", offset_of_name1);
                                 break; // jump out of the for loop
                             }
                         }
@@ -770,10 +867,12 @@ long get_offsets_in_vdump_second_pass(FILE* fd)    // When "next" points to the 
     }
 
     if(found_next == 1){
-        offset_of_name_in_task = offset_of_name1 - value_of_next0;
-        offset_of_next_in_task = proc_offset_of_next - (offset_of_name0 - offset_of_name_in_task);
-        printf("offset_of_name_in_task is 0x%lx\n", offset_of_name_in_task);
-        printf("offset_of_next_in_task is 0x%lx\n", offset_of_next_in_task);
+        task_offsets->name = offset_of_name1 - value_of_next0;
+//        printf("offset of name in task is 0x%lx\n", task_offsets->name);
+        //offset_of_name_in_task = offset_of_name1 - value_of_next0;
+        task_offsets->next = proc_offset_of_next - (offset_of_name0 - task_offsets->name);
+        //offset_of_next_in_task = proc_offset_of_next - (offset_of_name0 - offset_of_name_in_task);
+//        printf("offset_of_next_in_task is 0x%lx\n", offset_of_next_in_task);
         return 0;
     }else{
         printf("Sorry we could not find the offsets to construct the linked list!\n");
@@ -787,6 +886,7 @@ void print_process_from_vdump(FILE *fd)
 //    char ptr_name[40];
     char ptr_name[BUFFER_SIZE];
     long next_pointer_value;
+    char ptr_pid[4];
 
 //offset_of_name0=0xc36b623e;
 //offset_of_name0_least4=0x23e;
@@ -794,14 +894,26 @@ void print_process_from_vdump(FILE *fd)
 //proc_offset_of_next=0xc36b609c;
 //proc_offset_of_next=0xc0346050;
 
+    printf("	PID	COMMAND\n");
+
     fseek(fd, offset_of_name0, SEEK_SET);	// process 0, name pointer
     fread(ptr_name, BUFFER_SIZE, 1, fd);	// this should be the process name
-    printf("Name of the process is %s\n",ptr_name);	// print process 0 name
+
+    fseek(fd, offset_of_name0 - task_offsets->name + task_offsets->pid, SEEK_SET);	// process 0, pid
+    fread(ptr_pid, 4, 1, fd);	// this should be the process id
+    printf("	%d	",*(unsigned int*)ptr_pid);
+
+    printf("%s\n",ptr_name);	// print process 0 name
     print_counter++;
 
-    fseek(fd, offset_of_name1, SEEK_SET);	// process 0, name pointer
+    fseek(fd, offset_of_name1, SEEK_SET);	// process 1, name pointer
     fread(ptr_name, BUFFER_SIZE, 1, fd);	// this should be the process name
-    printf("Name of the process is %s\n",ptr_name);	// print process 1 name
+
+    fseek(fd, offset_of_name1 - task_offsets->name + task_offsets->pid, SEEK_SET);	// process 1, pid
+    fread(ptr_pid, 4, 1, fd);	// this should be the process id
+    printf("	%d	",*(unsigned int*)ptr_pid);
+
+    printf("%s\n",ptr_name);	// print process 1 name
     print_counter++;
 
 //    printf("proc_offset_of_next is 0x%lx\n", proc_offset_of_next);
@@ -816,14 +928,19 @@ void print_process_from_vdump(FILE *fd)
             fread(ptr_next, 4, 1, fd);	// assume this is a pointer
             if( ((*(unsigned int*)ptr_next) == proc_offset_of_next) || ((*(unsigned int*)ptr_next) == 0) )	// If it points to the next pointer of the first process, we assume we have traversed all processes.
             {
+                printf("-------\n");
                 printf("Total number of processes: %d\n", print_counter);
                 break;
             }
             next_pointer_value=(*(unsigned int*)ptr_next);
             fseek(fd, next_pointer_value-(proc_offset_of_next-offset_of_name0), SEEK_SET);	// process 2, next pointer
             fread(ptr_name, BUFFER_SIZE, 1, fd);	// this should be the process name
+
+            fseek(fd, next_pointer_value-(proc_offset_of_next-offset_of_name0) + task_offsets->pid, SEEK_SET);	// process i, pid
+            fread(ptr_pid, 4, 1, fd);	// this should be the process id
+            printf("	%d	",*(unsigned int*)ptr_pid);
             if(strlen(ptr_name) > 0) 
-                printf("Name of the process is %s\n",ptr_name);
+                printf("%s\n",ptr_name);
             print_counter++;
         }
     }else{	// When "next" points to the start of the next structure, this is true for Linux Kernel 2.4 as well as FreeBSD 8.4.
@@ -850,21 +967,31 @@ void print_process_from_vdump(FILE *fd)
             }
         }else{
             while(1){
-                fseek(fd,( next_pointer_value + offset_of_next_in_task ), SEEK_SET);	// process 2, next pointer
+                fseek(fd,( next_pointer_value + task_offsets->next ), SEEK_SET);	// process 2, next pointer
                 fread(ptr_next, 4, 1, fd);	// assume this is a pointer
-                if( (*(unsigned int*)ptr_next) == (proc_offset_of_next - offset_of_next_in_task) || ((*(unsigned int*)ptr_next) == 0) )	// If it points to the start address of the first process, we assume we have traversed all processes.
+//                if( (*(unsigned int*)ptr_next) == (proc_offset_of_next - task_offsets->next) || ((*(unsigned int*)ptr_next) == 0) )	// If it points to the start address of the first process, we assume we have traversed all processes.
                 {
+if(print_counter >= 25)
+{
+                    printf("-------\n");
                     printf("Total number of processes: %d\n", print_counter);
                     break;
+}
                 }
                 next_pointer_value=(*(unsigned int*)ptr_next);
 //                printf("next_pointer_value is 0x%lx\n", next_pointer_value);
 //          fseek(fd, next_pointer_value-(proc_offset_of_next-offset_of_name0), SEEK_SET);	// process 2, next pointer
-                fseek(fd, next_pointer_value+offset_of_name_in_task, SEEK_SET);	// process 2, next pointer
+                fseek(fd, next_pointer_value + task_offsets->pid, SEEK_SET);	// process i, pid
+                fread(ptr_pid, 4, 1, fd);	// this should be the process id
+
+                fseek(fd, next_pointer_value + task_offsets->name, SEEK_SET);	// process 2, next pointer
                 fread(ptr_name, BUFFER_SIZE, 1, fd);	// this should be the process name
                 if( (strlen(ptr_name) > 0) && (strlen(ptr_name) < 50) ) 
-                    printf("Name of the process is %s\n", ptr_name);
-                print_counter++;
+                {
+                    printf("	%d	",*(unsigned int*)ptr_pid);
+                    printf("%s\n", ptr_name);
+                    print_counter++;
+                }
             }
         }
     }
